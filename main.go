@@ -40,7 +40,7 @@ func New() *restful.WebService {
 		Produces(restful.MIME_XML, restful.MIME_JSON)
 
 	service.Route(service.GET("/{user-id}").To(FindUser))
-	//service.Route(service.POST("").To(UpdateUser))
+	service.Route(service.POST("").To(CreateUser))
 	//service.Route(service.PUT("/{user-id}").To(CreateUser))
 	//service.Route(service.DELETE("/{user-id}").To(RemoveUser))
 
@@ -48,17 +48,32 @@ func New() *restful.WebService {
 }
 
 type User struct {
-	Id, Name string
+	Id bson.ObjectId `json:"id" bson:"_id,omitempty"`
+	Name string
 }
 
 func FindUser(request *restful.Request, response *restful.Response) {
 	id := request.PathParameter("user-id")
 	result := User{}
-	err := collection.Find(bson.M{"id": id}).One(&result)
+	//err := collection.Find(ObjectId(id)).One(&result)
+	err := collection.FindId(bson.ObjectIdHex(id)).One(&result)
 	if err != nil {
 		log.Print("Error for user with id ", id, ": ", err)
 		response.WriteHeader(404)
 		return
 	}
 	response.WriteEntity(result)
+}
+
+func CreateUser(request *restful.Request, response *restful.Response) {
+	usr := User{Id: bson.NewObjectId()}
+	err := request.ReadEntity(&usr)
+	// here you would create the user with some persistence system
+	err = collection.Insert(usr)
+
+	if err == nil {
+		response.WriteHeaderAndEntity(http.StatusCreated, usr)
+	} else {
+		response.WriteError(http.StatusInternalServerError, err)
+	}
 }
