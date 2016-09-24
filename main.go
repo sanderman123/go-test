@@ -7,6 +7,7 @@ import (
 	"log"
 	"gopkg.in/mgo.v2"
 	"gopkg.in/mgo.v2/bson"
+	"golang.org/x/crypto/bcrypt"
 )
 
 var collection = &mgo.Collection{}
@@ -46,7 +47,7 @@ func New() *restful.WebService {
 
 type User struct {
 	UserName, Email string
-	Password        string `json:"-" xml:"-"`
+	Password        string `json:",omitempty" xml:",omitempty"`
 }
 
 func EnsureIndices() {
@@ -80,12 +81,13 @@ func EnsureIndices() {
 
 func FindUser(request *restful.Request, response *restful.Response) {
 	userName := request.PathParameter("user-name")
-	result := User{}
+	usr := User{}
 
-	err := collection.Find(bson.M{"username": userName}).One(&result)
+	err := collection.Find(bson.M{"username": userName}).One(&usr)
+	usr.Password = ""
 
 	if err == nil {
-		response.WriteEntity(result)
+		response.WriteEntity(usr)
 	} else if err == mgo.ErrNotFound {
 		response.WriteHeader(http.StatusNotFound)
 	} else {
@@ -102,7 +104,22 @@ func CreateUser(request *restful.Request, response *restful.Response) {
 		return
 	}
 
+	// Hashing the password with the default cost of 10
+	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(usr.Password), bcrypt.DefaultCost)
+	if err != nil {
+		panic(err)
+	}
+
+	// Comparing the password with the hash
+	err = bcrypt.CompareHashAndPassword(hashedPassword, []byte(usr.Password))
+	if err != nil {
+		log.Println("Error comparing password to hash ", err)
+		response.WriteError(http.StatusInternalServerError, err)
+	}
+	usr.Password = string(hashedPassword)
+
 	err = collection.Insert(usr)
+	usr.Password = ""
 
 	if err == nil {
 		response.WriteHeaderAndEntity(http.StatusCreated, usr)
@@ -116,6 +133,7 @@ func UpdateUser(request *restful.Request, response *restful.Response) {
 	err := request.ReadEntity(&usr)
 
 	err = collection.Update(bson.M{"username": usr.UserName}, usr)
+	usr.Password = ""
 
 	if err == nil {
 		response.WriteEntity(usr)
