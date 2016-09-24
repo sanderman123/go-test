@@ -41,14 +41,14 @@ func New() *restful.WebService {
 
 	service.Route(service.GET("/{user-id}").To(FindUser))
 	service.Route(service.POST("").To(CreateUser))
-	//service.Route(service.PUT("/{user-id}").To(CreateUser))
-	//service.Route(service.DELETE("/{user-id}").To(RemoveUser))
+	service.Route(service.PUT("").To(UpdateUser))
+	service.Route(service.DELETE("/{user-id}").To(DeleteUser))
 
 	return service
 }
 
 type User struct {
-	Id bson.ObjectId `json:"id" bson:"_id,omitempty"`
+	Id   bson.ObjectId `json:"id" bson:"_id,omitempty"`
 	Name string
 }
 
@@ -57,22 +57,54 @@ func FindUser(request *restful.Request, response *restful.Response) {
 	result := User{}
 	//err := collection.Find(ObjectId(id)).One(&result)
 	err := collection.FindId(bson.ObjectIdHex(id)).One(&result)
-	if err != nil {
+
+	if err == nil {
+		response.WriteEntity(result)
+	} else if err == mgo.ErrNotFound {
+		response.WriteHeader(http.StatusNotFound)
+	} else {
 		log.Print("Error for user with id ", id, ": ", err)
-		response.WriteHeader(404)
-		return
+		response.WriteError(http.StatusInternalServerError, err)
 	}
-	response.WriteEntity(result)
 }
 
 func CreateUser(request *restful.Request, response *restful.Response) {
 	usr := User{Id: bson.NewObjectId()}
 	err := request.ReadEntity(&usr)
-	// here you would create the user with some persistence system
+
 	err = collection.Insert(usr)
 
 	if err == nil {
 		response.WriteHeaderAndEntity(http.StatusCreated, usr)
+	} else {
+		response.WriteError(http.StatusInternalServerError, err)
+	}
+}
+
+func UpdateUser(request *restful.Request, response *restful.Response) {
+	usr := new(User)
+	err := request.ReadEntity(&usr)
+
+	err = collection.UpdateId(usr.Id, usr)
+
+	if err == nil {
+		response.WriteEntity(usr)
+	} else if err == mgo.ErrNotFound {
+		response.WriteHeader(http.StatusNotFound)
+	} else {
+		response.WriteError(http.StatusInternalServerError, err)
+	}
+}
+
+func DeleteUser(request *restful.Request, response *restful.Response) {
+	// here you would delete the user from some persistence system
+	id := request.PathParameter("user-id")
+	err := collection.RemoveId(bson.ObjectIdHex(id));
+
+	if err == nil {
+		response.WriteHeader(http.StatusOK)
+	} else if err == mgo.ErrNotFound {
+		response.WriteHeader(http.StatusNotFound)
 	} else {
 		response.WriteError(http.StatusInternalServerError, err)
 	}
