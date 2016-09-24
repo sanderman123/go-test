@@ -22,11 +22,8 @@ func main() {
 	defer session.Close()
 
 	collection = session.DB("gotest").C("users")
-	//err = c.Insert(&User{"ID1", "Ale"},
-	//	&User{"ID2", "Cla"})
-	//if err != nil {
-	//	log.Fatal(err)
-	//}
+
+	EnsureIndices()
 
 	restful.Add(New())
 	log.Fatal(http.ListenAndServe(":8080", nil))
@@ -39,38 +36,71 @@ func New() *restful.WebService {
 		Consumes(restful.MIME_XML, restful.MIME_JSON).
 		Produces(restful.MIME_XML, restful.MIME_JSON)
 
-	service.Route(service.GET("/{user-id}").To(FindUser))
+	service.Route(service.GET("/{user-name}").To(FindUser))
 	service.Route(service.POST("").To(CreateUser))
 	service.Route(service.PUT("").To(UpdateUser))
-	service.Route(service.DELETE("/{user-id}").To(DeleteUser))
+	service.Route(service.DELETE("/{user-name}").To(DeleteUser))
 
 	return service
 }
 
 type User struct {
-	Id   bson.ObjectId `json:"id" bson:"_id,omitempty"`
-	Name string
+	UserName, Email string
+	Password        string `json:"-" xml:"-"`
+}
+
+func EnsureIndices() {
+	// Index
+	index := mgo.Index{
+		Key:        []string{"username"},
+		Unique:     true,
+		DropDups:   true,
+		Background: true,
+		Sparse:     true,
+	}
+
+	err := collection.EnsureIndex(index)
+	if err != nil {
+		panic(err)
+	}
+
+	index = mgo.Index{
+		Key:        []string{"email"},
+		Unique:     true,
+		DropDups:   true,
+		Background: true,
+		Sparse:     true,
+	}
+
+	err = collection.EnsureIndex(index)
+	if err != nil {
+		panic(err)
+	}
 }
 
 func FindUser(request *restful.Request, response *restful.Response) {
-	id := request.PathParameter("user-id")
+	userName := request.PathParameter("user-name")
 	result := User{}
-	//err := collection.Find(ObjectId(id)).One(&result)
-	err := collection.FindId(bson.ObjectIdHex(id)).One(&result)
+
+	err := collection.Find(bson.M{"username": userName}).One(&result)
 
 	if err == nil {
 		response.WriteEntity(result)
 	} else if err == mgo.ErrNotFound {
 		response.WriteHeader(http.StatusNotFound)
 	} else {
-		log.Print("Error for user with id ", id, ": ", err)
+		log.Print("Error for user with userName ", userName, ": ", err)
 		response.WriteError(http.StatusInternalServerError, err)
 	}
 }
 
 func CreateUser(request *restful.Request, response *restful.Response) {
-	usr := User{Id: bson.NewObjectId()}
+	usr := new(User)
 	err := request.ReadEntity(&usr)
+	if err != nil {
+		response.WriteError(http.StatusInternalServerError, err)
+		return
+	}
 
 	err = collection.Insert(usr)
 
@@ -85,7 +115,7 @@ func UpdateUser(request *restful.Request, response *restful.Response) {
 	usr := new(User)
 	err := request.ReadEntity(&usr)
 
-	err = collection.UpdateId(usr.Id, usr)
+	err = collection.Update(bson.M{"username": usr.UserName}, usr)
 
 	if err == nil {
 		response.WriteEntity(usr)
@@ -98,8 +128,8 @@ func UpdateUser(request *restful.Request, response *restful.Response) {
 
 func DeleteUser(request *restful.Request, response *restful.Response) {
 	// here you would delete the user from some persistence system
-	id := request.PathParameter("user-id")
-	err := collection.RemoveId(bson.ObjectIdHex(id));
+	userName := request.PathParameter("user-name")
+	err := collection.Remove(bson.M{"username": userName});
 
 	if err == nil {
 		response.WriteHeader(http.StatusOK)
