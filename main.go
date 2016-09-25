@@ -6,12 +6,14 @@ import (
 	"log"
 	"time"
 	"flag"
+	"errors"
 	"gopkg.in/mgo.v2"
 	"gopkg.in/mgo.v2/bson"
 	"golang.org/x/crypto/bcrypt"
 	"github.com/emicklei/go-restful"
 	"github.com/dgrijalva/jwt-go"
 	"github.com/magiconair/properties"
+	"github.com/sanderman123/user-service/util"
 )
 
 var (
@@ -22,7 +24,7 @@ var (
 )
 
 func main() {
-	message := time.Second;
+	message := "Hello World!"
 	fmt.Println(message)
 
 	var err error
@@ -57,6 +59,7 @@ func New() *restful.WebService {
 	service.Route(service.PUT("").To(UpdateUser))
 	service.Route(service.DELETE("/{user-name}").To(DeleteUser))
 	service.Route(service.POST("/login").To(AuthenticateUser))
+	service.Route(service.GET("/activate/{token}").To(ActivateUser))
 
 	return service
 }
@@ -64,6 +67,7 @@ func New() *restful.WebService {
 type User struct {
 	UserName, Email string
 	Password        string `json:",omitempty" xml:",omitempty"`
+	ActivationToken string `json:"-" xml:"-" bson:",omitempty"`
 }
 
 func EnsureIndices() {
@@ -129,15 +133,26 @@ func CreateUser(request *restful.Request, response *restful.Response) {
 	// Comparing the password with the hash
 	err = bcrypt.CompareHashAndPassword(hashedPassword, []byte(usr.Password))
 	if err != nil {
-		log.Println("Error comparing password to hash ", err)
-		response.WriteError(http.StatusInternalServerError, err)
+		message := "Error comparing password to hash"
+		log.Println(message, err)
+		response.WriteError(http.StatusInternalServerError, errors.New(message))
+		return
 	}
 	usr.Password = string(hashedPassword)
+
+	token, err := util.GenerateRandomString(32)
+	if err != nil {
+		message := "Generating activation token failed"
+		log.Println(message, err)
+		response.WriteError(http.StatusInternalServerError, errors.New(message))
+		return
+	}
+	usr.ActivationToken = token
 
 	err = collection.Insert(usr)
 	usr.Password = ""
 
-	SendActivationEmail(usr)
+	SendActivationEmail(request.Request, usr)
 
 	if err == nil {
 		response.WriteHeaderAndEntity(http.StatusCreated, usr)
@@ -215,6 +230,29 @@ func AuthenticateUser(request *restful.Request, response *restful.Response) {
 	if err == nil {
 		response.WriteEntity(tokenString)
 	} else {
+		response.WriteError(http.StatusInternalServerError, err)
+	}
+}
+
+func ActivateUser(request *restful.Request, response *restful.Response) {
+	token := request.PathParameter("token")
+	usr := User{}
+
+	err := collection.Find(bson.M{"activationtoken": token}).One(&usr)
+
+	if err == nil {
+		usr.ActivationToken = ""
+		collection.Update(bson.M{"username": usr.UserName}, usr)
+		if err == nil {
+			response.WriteHeader(http.StatusOK)
+		} else {
+			log.Print("Error updating user with userName", usr.UserName, ": ", err)
+			response.WriteError(http.StatusInternalServerError, err)
+		}
+	} else if err == mgo.ErrNotFound {
+		response.WriteError(http.StatusBadRequest, errors.New("This user is already activated"))
+	} else {
+		log.Print("Error for user with userName", token, ": ", err)
 		response.WriteError(http.StatusInternalServerError, err)
 	}
 }
