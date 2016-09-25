@@ -14,6 +14,7 @@ import (
 	"github.com/dgrijalva/jwt-go"
 	"github.com/magiconair/properties"
 	"github.com/sanderman123/user-service/util"
+	"github.com/sanderman123/user-service/model"
 )
 
 var (
@@ -60,14 +61,10 @@ func New() *restful.WebService {
 	service.Route(service.DELETE("/{user-name}").To(DeleteUser))
 	service.Route(service.POST("/login").To(AuthenticateUser))
 	service.Route(service.GET("/activate/{token}").To(ActivateUser))
+	service.Route(service.POST("/forgot").To(ForgotPassword))
+	service.Route(service.POST("/reset/{token}").To(ResetPassword))
 
 	return service
-}
-
-type User struct {
-	UserName, Email string
-	Password        string `json:",omitempty" xml:",omitempty"`
-	ActivationToken string `json:"-" xml:"-" bson:",omitempty"`
 }
 
 func EnsureIndices() {
@@ -101,7 +98,7 @@ func EnsureIndices() {
 
 func FindUser(request *restful.Request, response *restful.Response) {
 	userName := request.PathParameter("user-name")
-	usr := User{}
+	usr := model.User{}
 
 	err := collection.Find(bson.M{"username": userName}).One(&usr)
 	usr.Password = ""
@@ -117,28 +114,14 @@ func FindUser(request *restful.Request, response *restful.Response) {
 }
 
 func CreateUser(request *restful.Request, response *restful.Response) {
-	usr := new(User)
+	usr := new(model.User)
 	err := request.ReadEntity(&usr)
 	if err != nil {
 		response.WriteError(http.StatusInternalServerError, err)
 		return
 	}
 
-	// Hashing the password with the default cost of 10
-	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(usr.Password), bcrypt.DefaultCost)
-	if err != nil {
-		panic(err)
-	}
-
-	// Comparing the password with the hash
-	err = bcrypt.CompareHashAndPassword(hashedPassword, []byte(usr.Password))
-	if err != nil {
-		message := "Error comparing password to hash"
-		log.Println(message, err)
-		response.WriteError(http.StatusInternalServerError, errors.New(message))
-		return
-	}
-	usr.Password = string(hashedPassword)
+	err = util.SetPassword(usr, usr.Password)
 
 	token, err := util.GenerateRandomString(32)
 	if err != nil {
@@ -162,7 +145,7 @@ func CreateUser(request *restful.Request, response *restful.Response) {
 }
 
 func UpdateUser(request *restful.Request, response *restful.Response) {
-	usr := new(User)
+	usr := new(model.User)
 	err := request.ReadEntity(&usr)
 
 	err = collection.Update(bson.M{"username": usr.UserName}, usr)
@@ -192,7 +175,7 @@ func DeleteUser(request *restful.Request, response *restful.Response) {
 }
 
 func AuthenticateUser(request *restful.Request, response *restful.Response) {
-	usr := new(User)
+	usr := new(model.User)
 	err := request.ReadEntity(&usr)
 	if err != nil {
 		response.WriteError(http.StatusInternalServerError, err)
@@ -236,7 +219,7 @@ func AuthenticateUser(request *restful.Request, response *restful.Response) {
 
 func ActivateUser(request *restful.Request, response *restful.Response) {
 	token := request.PathParameter("token")
-	usr := User{}
+	usr := model.User{}
 
 	err := collection.Find(bson.M{"activationtoken": token}).One(&usr)
 
@@ -251,6 +234,69 @@ func ActivateUser(request *restful.Request, response *restful.Response) {
 		}
 	} else if err == mgo.ErrNotFound {
 		response.WriteError(http.StatusBadRequest, errors.New("This user is already activated"))
+	} else {
+		log.Print("Error for user with userName", token, ": ", err)
+		response.WriteError(http.StatusInternalServerError, err)
+	}
+}
+
+func ForgotPassword(request *restful.Request, response *restful.Response) {
+	var email string
+	err := request.ReadEntity(&email)
+
+	usr := new(model.User)
+	err = collection.Find(bson.M{"email": email}).One(&usr)
+
+	if err == nil {
+
+		token, err := util.GenerateRandomString(32)
+		if err != nil {
+			message := "Generating reset token failed"
+			log.Println(message, err)
+			response.WriteError(http.StatusInternalServerError, errors.New(message))
+			return
+		}
+		usr.ResetToken = token
+
+		err = collection.Update(bson.M{"username": usr.UserName}, usr)
+
+		if err == nil {
+			SendPasswordResetEmail(request.Request, usr)
+			response.WriteEntity("A password reset email has been sent")
+		} else {
+			log.Print("Error updating user with userName", usr.UserName, ": ", err)
+			response.WriteError(http.StatusInternalServerError, err)
+		}
+	} else if err == mgo.ErrNotFound {
+		response.WriteHeader(http.StatusNotFound)
+	} else {
+		response.WriteError(http.StatusInternalServerError, err)
+	}
+}
+
+func ResetPassword(request *restful.Request, response *restful.Response) {
+	token := request.PathParameter("token")
+	usr := model.User{}
+
+	var password string
+	err := request.ReadEntity(&password)
+
+	err = collection.Find(bson.M{"resettoken": token}).One(&usr)
+
+	if err == nil {
+		err = util.SetPassword(&usr, password)
+
+		usr.ResetToken = ""
+
+		collection.Update(bson.M{"username": usr.UserName}, usr)
+		if err == nil {
+			response.WriteHeader(http.StatusOK)
+		} else {
+			log.Print("Error updating user with userName", usr.UserName, ": ", err)
+			response.WriteError(http.StatusInternalServerError, err)
+		}
+	} else if err == mgo.ErrNotFound {
+		response.WriteError(http.StatusBadRequest, errors.New("This reset link is no longer valid"))
 	} else {
 		log.Print("Error for user with userName", token, ": ", err)
 		response.WriteError(http.StatusInternalServerError, err)
