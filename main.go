@@ -4,21 +4,33 @@ import (
 	"fmt"
 	"net/http"
 	"log"
+	"time"
+	"flag"
 	"gopkg.in/mgo.v2"
 	"gopkg.in/mgo.v2/bson"
 	"golang.org/x/crypto/bcrypt"
 	"github.com/emicklei/go-restful"
 	"github.com/dgrijalva/jwt-go"
-	"time"
+	"github.com/magiconair/properties"
 )
 
-var collection = &mgo.Collection{}
+var (
+	props          *properties.Properties
+	propertiesFile = flag.String("config", "user-service.properties", "the configuration file")
+
+	collection = &mgo.Collection{}
+)
 
 func main() {
-	message := "Hello, world"
+	message := time.Second;
 	fmt.Println(message)
 
-	session, err := mgo.Dial("localhost:27017")
+	var err error
+	if props, err = properties.LoadFile(*propertiesFile, properties.UTF8); err != nil {
+		log.Fatalf("[error] Unable to read properties:%v\n", err)
+	}
+
+	session, err := mgo.Dial(fmt.Sprintf("%s:%d", props.GetString("mongod.host", ""), props.GetInt("mongod.port", 0)))
 	if err != nil {
 		panic(err)
 	}
@@ -27,6 +39,7 @@ func main() {
 	collection = session.DB("gotest").C("users")
 
 	EnsureIndices()
+	Setup(props.GetString("mail.host", ""), props.GetInt("mail.port", 0), props.GetString("mail.username", ""), props.GetString("mail.password", ""))
 
 	restful.Add(New())
 	log.Fatal(http.ListenAndServe(":8080", nil))
@@ -123,6 +136,8 @@ func CreateUser(request *restful.Request, response *restful.Response) {
 
 	err = collection.Insert(usr)
 	usr.Password = ""
+
+	SendActivationEmail(usr)
 
 	if err == nil {
 		response.WriteHeaderAndEntity(http.StatusCreated, usr)
