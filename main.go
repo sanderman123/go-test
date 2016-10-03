@@ -2,26 +2,23 @@ package main
 
 import (
 	"fmt"
-	"net/http"
+	//"net/http"
 	"log"
 	"time"
 	"flag"
-	"errors"
 	"gopkg.in/mgo.v2"
-	"gopkg.in/mgo.v2/bson"
-	"golang.org/x/crypto/bcrypt"
 	"github.com/emicklei/go-restful"
-	"github.com/dgrijalva/jwt-go"
 	"github.com/magiconair/properties"
-	"github.com/sanderman123/user-service/util"
-	"github.com/sanderman123/user-service/model"
+	"github.com/sanderman123/user-service/controller"
+	"github.com/sanderman123/user-service/dao"
+	"github.com/sanderman123/user-service/router"
+	"github.com/gin-gonic/gin"
+	"net/http"
 )
 
 var (
 	props          *properties.Properties
 	propertiesFile = flag.String("config", "user-service.properties", "the configuration file")
-
-	collection = &mgo.Collection{}
 )
 
 func main() {
@@ -39,266 +36,47 @@ func main() {
 	}
 	defer session.Close()
 
-	collection = session.DB("gotest").C("users")
+	database := session.DB("gotest")
+	//userDao := dao.UserDaoImpl{}
+	//userDao.Init(database)
+	dao.Init(database)
 
-	EnsureIndices()
-	Setup(props.GetString("mail.host", ""), props.GetInt("mail.port", 0), props.GetString("mail.username", ""), props.GetString("mail.password", ""))
+	controller.Init(props.GetString("mail.host", ""), props.GetInt("mail.port", 0), props.GetString("mail.username", ""), props.GetString("mail.password", ""))
 
 	restful.Add(New())
 	log.Fatal(http.ListenAndServe(":8080", nil))
+	//Gin()
 }
 
 func New() *restful.WebService {
 	service := new(restful.WebService)
-	service.
-	Path("/users").
-		Consumes(restful.MIME_XML, restful.MIME_JSON).
-		Produces(restful.MIME_XML, restful.MIME_JSON)
-
-	service.Route(service.GET("/{user-name}").To(FindUser))
-	service.Route(service.POST("").To(CreateUser))
-	service.Route(service.PUT("").To(UpdateUser))
-	service.Route(service.DELETE("/{user-name}").To(DeleteUser))
-	service.Route(service.POST("/login").To(AuthenticateUser))
-	service.Route(service.GET("/activate/{token}").To(ActivateUser))
-	service.Route(service.POST("/forgot").To(ForgotPassword))
-	service.Route(service.POST("/reset/{token}").To(ResetPassword))
-
+	router.Init(service)
 	return service
 }
 
-func EnsureIndices() {
-	// Index
-	index := mgo.Index{
-		Key:        []string{"username"},
-		Unique:     true,
-		DropDups:   true,
-		Background: true,
-		Sparse:     true,
-	}
+func Gin() {
+	r := gin.Default()
+	//_ = r.Group("/users")
+	//{
+		r.GET("/users/:name", func(c *gin.Context) {
+			name := c.Param("name")
+			response := controller.FindUser(name)
+			c.JSON(response.Status, response.Body)
+		})
+		//r.POST("", controller.CreateUser)
+		//r.PUT("", controller.UpdateUser)
+		//r.DELETE("/{user-name}", controller.DeleteUser)
+		//r.POST("/login", controller.AuthenticateUser)
+		//r.GET("/activate/{token}", controller.ActivateUser)
+		//r.POST("/forgot", controller.ForgotPassword)
+		//r.POST("/reset/{token}", controller.ResetPassword)
+	//}
 
-	err := collection.EnsureIndex(index)
-	if err != nil {
-		panic(err)
-	}
-
-	index = mgo.Index{
-		Key:        []string{"email"},
-		Unique:     true,
-		DropDups:   true,
-		Background: true,
-		Sparse:     true,
-	}
-
-	err = collection.EnsureIndex(index)
-	if err != nil {
-		panic(err)
-	}
+	r.Run(":8080")
 }
 
-func FindUser(request *restful.Request, response *restful.Response) {
-	userName := request.PathParameter("user-name")
-	usr := model.User{}
-
-	err := collection.Find(bson.M{"username": userName}).One(&usr)
-	usr.Password = ""
-
-	if err == nil {
-		response.WriteEntity(usr)
-	} else if err == mgo.ErrNotFound {
-		response.WriteHeader(http.StatusNotFound)
-	} else {
-		log.Print("Error for user with userName ", userName, ": ", err)
-		response.WriteError(http.StatusInternalServerError, err)
-	}
-}
-
-func CreateUser(request *restful.Request, response *restful.Response) {
-	usr := new(model.User)
-	err := request.ReadEntity(&usr)
-	if err != nil {
-		response.WriteError(http.StatusInternalServerError, err)
-		return
-	}
-
-	err = util.SetPassword(usr, usr.Password)
-
-	token, err := util.GenerateRandomString(32)
-	if err != nil {
-		message := "Generating activation token failed"
-		log.Println(message, err)
-		response.WriteError(http.StatusInternalServerError, errors.New(message))
-		return
-	}
-	usr.ActivationToken = token
-
-	err = collection.Insert(usr)
-	usr.Password = ""
-
-	SendActivationEmail(request.Request, usr)
-
-	if err == nil {
-		response.WriteHeaderAndEntity(http.StatusCreated, usr)
-	} else {
-		response.WriteError(http.StatusInternalServerError, err)
-	}
-}
-
-func UpdateUser(request *restful.Request, response *restful.Response) {
-	usr := new(model.User)
-	err := request.ReadEntity(&usr)
-
-	err = collection.Update(bson.M{"username": usr.UserName}, usr)
-	usr.Password = ""
-
-	if err == nil {
-		response.WriteEntity(usr)
-	} else if err == mgo.ErrNotFound {
-		response.WriteHeader(http.StatusNotFound)
-	} else {
-		response.WriteError(http.StatusInternalServerError, err)
-	}
-}
-
-func DeleteUser(request *restful.Request, response *restful.Response) {
-	// here you would delete the user from some persistence system
-	userName := request.PathParameter("user-name")
-	err := collection.Remove(bson.M{"username": userName});
-
-	if err == nil {
-		response.WriteHeader(http.StatusOK)
-	} else if err == mgo.ErrNotFound {
-		response.WriteHeader(http.StatusNotFound)
-	} else {
-		response.WriteError(http.StatusInternalServerError, err)
-	}
-}
-
-func AuthenticateUser(request *restful.Request, response *restful.Response) {
-	usr := new(model.User)
-	err := request.ReadEntity(&usr)
-	if err != nil {
-		response.WriteError(http.StatusInternalServerError, err)
-		return
-	}
-
-	unHashedPassword := usr.Password
-	err = collection.Find(bson.M{"username": usr.UserName}).One(&usr)
-	if err != nil {
-		response.WriteError(http.StatusInternalServerError, err)
-		return
-	}
-
-	// Comparing the password with the hash
-	err = bcrypt.CompareHashAndPassword([]byte(usr.Password), []byte(unHashedPassword))
-	if err != nil {
-		log.Println("Error comparing password to hash ", err)
-		response.WriteError(http.StatusUnauthorized, err)
-	}
-
-	usr.Password = ""
-
-	// Create a new token object, specifying signing method and the claims
-	// you would like it to contain.
-	token := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
-		"userName": usr.UserName,
-		"nbf": time.Date(2016, 9, 24, 12, 0, 0, 0, time.UTC).Unix(),
-	})
-
-	// Sign and get the complete encoded token as a string using the secret
-	tokenString, err := token.SignedString([]byte("my-secret"))
-
-	fmt.Println(tokenString, err)
-
-	if err == nil {
-		response.WriteEntity(tokenString)
-	} else {
-		response.WriteError(http.StatusInternalServerError, err)
-	}
-}
-
-func ActivateUser(request *restful.Request, response *restful.Response) {
-	token := request.PathParameter("token")
-	usr := model.User{}
-
-	err := collection.Find(bson.M{"activationtoken": token}).One(&usr)
-
-	if err == nil {
-		usr.ActivationToken = ""
-		collection.Update(bson.M{"username": usr.UserName}, usr)
-		if err == nil {
-			response.WriteHeader(http.StatusOK)
-		} else {
-			log.Print("Error updating user with userName", usr.UserName, ": ", err)
-			response.WriteError(http.StatusInternalServerError, err)
-		}
-	} else if err == mgo.ErrNotFound {
-		response.WriteError(http.StatusBadRequest, errors.New("This user is already activated"))
-	} else {
-		log.Print("Error for user with userName", token, ": ", err)
-		response.WriteError(http.StatusInternalServerError, err)
-	}
-}
-
-func ForgotPassword(request *restful.Request, response *restful.Response) {
-	var email string
-	err := request.ReadEntity(&email)
-
-	usr := new(model.User)
-	err = collection.Find(bson.M{"email": email}).One(&usr)
-
-	if err == nil {
-
-		token, err := util.GenerateRandomString(32)
-		if err != nil {
-			message := "Generating reset token failed"
-			log.Println(message, err)
-			response.WriteError(http.StatusInternalServerError, errors.New(message))
-			return
-		}
-		usr.ResetToken = token
-
-		err = collection.Update(bson.M{"username": usr.UserName}, usr)
-
-		if err == nil {
-			SendPasswordResetEmail(request.Request, usr)
-			response.WriteEntity("A password reset email has been sent")
-		} else {
-			log.Print("Error updating user with userName", usr.UserName, ": ", err)
-			response.WriteError(http.StatusInternalServerError, err)
-		}
-	} else if err == mgo.ErrNotFound {
-		response.WriteHeader(http.StatusNotFound)
-	} else {
-		response.WriteError(http.StatusInternalServerError, err)
-	}
-}
-
-func ResetPassword(request *restful.Request, response *restful.Response) {
-	token := request.PathParameter("token")
-	usr := model.User{}
-
-	var password string
-	err := request.ReadEntity(&password)
-
-	err = collection.Find(bson.M{"resettoken": token}).One(&usr)
-
-	if err == nil {
-		err = util.SetPassword(&usr, password)
-
-		usr.ResetToken = ""
-
-		collection.Update(bson.M{"username": usr.UserName}, usr)
-		if err == nil {
-			response.WriteHeader(http.StatusOK)
-		} else {
-			log.Print("Error updating user with userName", usr.UserName, ": ", err)
-			response.WriteError(http.StatusInternalServerError, err)
-		}
-	} else if err == mgo.ErrNotFound {
-		response.WriteError(http.StatusBadRequest, errors.New("This reset link is no longer valid"))
-	} else {
-		log.Print("Error for user with userName", token, ": ", err)
-		response.WriteError(http.StatusInternalServerError, err)
-	}
+func Log(l *log.Logger, msg string) {
+	//Format("2006-01-02 15:04:05:006")
+	l.SetPrefix(fmt.Sprint(time.Now().UnixNano() / 1000000) + " [AAA] ")
+	l.Print(msg)
 }

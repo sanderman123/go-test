@@ -1,20 +1,18 @@
-package main
+package controller
 
 import (
 	"fmt"
 	"gopkg.in/gomail.v2"
-	"net/http"
 	"github.com/sanderman123/user-service/model"
 )
 
 var d *gomail.Dialer
 
-func Setup(host string, port int, user string, password string) {
+func Init(host string, port int, user string, password string) {
 	d = gomail.NewDialer(host, port, user, password)
 }
 
-func SendActivationEmail(request *http.Request, usr *model.User) {
-	host := request.Host
+func SendActivationEmail(usr model.User, host string) error {
 	url := fmt.Sprintf("http://%s/users/activate/%s", host, usr.ActivationToken)
 
 	m := gomail.NewMessage()
@@ -27,13 +25,10 @@ func SendActivationEmail(request *http.Request, usr *model.User) {
 	<a href=%s>%s</a>`, usr.UserName, url, url))
 
 	// Send the email
-	if err := d.DialAndSend(m); err != nil {
-		panic(err)
-	}
+	return d.DialAndSend(m)
 }
 
-func SendPasswordResetEmail(request *http.Request, usr *model.User) {
-	host := request.Host
+func SendPasswordResetEmail(usr *model.User, host string) error {
 	url := fmt.Sprintf("http://%s/users/reset/%s", host, usr.ResetToken)
 
 	m := gomail.NewMessage()
@@ -46,7 +41,5 @@ func SendPasswordResetEmail(request *http.Request, usr *model.User) {
 	<a href=%s>%s</a>`, usr.UserName, url, url))
 
 	// Send the email
-	if err := d.DialAndSend(m); err != nil {
-		panic(err)
-	}
+	return d.DialAndSend(m);
 }
