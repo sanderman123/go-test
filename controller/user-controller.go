@@ -13,26 +13,12 @@ import (
 	"github.com/sanderman123/user-service/dao"
 )
 
-type Response struct {
-	Status int
-	Body   interface{}
-}
-
 func FindUser(userName string) Response {
 	result := Response{}
-	firstStart := time.Now().UnixNano() / 1000000
-	start := time.Now().UnixNano() / 1000000
-	end := time.Now().UnixNano() / 1000000
-	log.Println("Path param: ", end - start)
 
-	start = time.Now().UnixNano() / 1000000
 	usr, err := dao.FindUserWithUserName(userName)
-	end = time.Now().UnixNano() / 1000000
-	log.Println("Query: ", end - start)
-
 	usr.Password = ""
 
-	start = time.Now().UnixNano() / 1000000
 	if err == nil {
 		result = Response{Status: http.StatusOK, Body: usr}
 	} else if err == mgo.ErrNotFound {
@@ -41,10 +27,6 @@ func FindUser(userName string) Response {
 		log.Print("Error for user with userName ", userName, ": ", err)
 		result = Response{Status: http.StatusInternalServerError, Body: err}
 	}
-	end = time.Now().UnixNano() / 1000000
-	log.Println("Response: ", end - start)
-
-	log.Println("Full method: ", end - firstStart)
 	return result
 }
 
@@ -177,30 +159,4 @@ func ResetPassword(token string, password string) Response {
 		}
 	}
 	return ProduceResponse(nil, err)
-}
-
-func ProduceResponse(entity interface{}, err error) Response {
-	result := Response{Status: http.StatusNotImplemented}
-	if err == nil {
-		result = Response{Status: http.StatusOK, Body: entity}
-	} else if err == mgo.ErrNotFound {
-		result = Response{Status: http.StatusNotFound}
-	} else {
-		log.Println(fmt.Sprintf("[ERROR] An error occurred: %s", err))
-		result = Response{Status: http.StatusInternalServerError, Body: "An error occurred"}
-	}
-	return result
-}
-
-func ProduceStatusResponse(entity interface{}, err error, status int) Response {
-	result := Response{Status: http.StatusNotImplemented}
-	if err == nil {
-		result = Response{Status: status, Body: entity}
-	} else if err == mgo.ErrNotFound {
-		result = Response{Status: http.StatusNotFound}
-	} else {
-		log.Println(fmt.Sprintf("[ERROR] An error occurred: %s", err))
-		result = Response{Status: http.StatusInternalServerError, Body: "An error occurred"}
-	}
-	return result
 }

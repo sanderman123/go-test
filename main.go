@@ -2,7 +2,6 @@ package main
 
 import (
 	"fmt"
-	//"net/http"
 	"log"
 	"time"
 	"flag"
@@ -11,9 +10,10 @@ import (
 	"github.com/magiconair/properties"
 	"github.com/sanderman123/user-service/controller"
 	"github.com/sanderman123/user-service/dao"
-	"github.com/sanderman123/user-service/router"
 	"github.com/gin-gonic/gin"
 	"net/http"
+	"github.com/sanderman123/user-service/router/ginrouter"
+	"github.com/sanderman123/user-service/router/go-restful"
 )
 
 var (
@@ -43,35 +43,20 @@ func main() {
 
 	controller.Init(props.GetString("mail.host", ""), props.GetInt("mail.port", 0), props.GetString("mail.username", ""), props.GetString("mail.password", ""))
 
-	restful.Add(New())
-	log.Fatal(http.ListenAndServe(":8080", nil))
-	//Gin()
+	//GoRestful()
+	Gin()
 }
 
-func New() *restful.WebService {
+func GoRestful() {
 	service := new(restful.WebService)
-	router.Init(service)
-	return service
+	gorestful.Init(service)
+	restful.Add(service)
+	log.Fatal(http.ListenAndServe(":8080", nil))
 }
 
 func Gin() {
 	r := gin.Default()
-	//_ = r.Group("/users")
-	//{
-		r.GET("/users/:name", func(c *gin.Context) {
-			name := c.Param("name")
-			response := controller.FindUser(name)
-			c.JSON(response.Status, response.Body)
-		})
-		//r.POST("", controller.CreateUser)
-		//r.PUT("", controller.UpdateUser)
-		//r.DELETE("/{user-name}", controller.DeleteUser)
-		//r.POST("/login", controller.AuthenticateUser)
-		//r.GET("/activate/{token}", controller.ActivateUser)
-		//r.POST("/forgot", controller.ForgotPassword)
-		//r.POST("/reset/{token}", controller.ResetPassword)
-	//}
-
+	ginrouter.Init(r)
 	r.Run(":8080")
 }
 

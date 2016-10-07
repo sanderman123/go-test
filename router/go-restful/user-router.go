@@ -1,4 +1,4 @@
-package router
+package gorestful
 
 import (
 	"github.com/emicklei/go-restful"
@@ -20,7 +20,7 @@ func Init(service *restful.WebService) {
 	service.Route(service.PUT("").To(UpdateUser))
 	service.Route(service.DELETE("/{" + USER_NAME + "}").To(DeleteUser))
 	service.Route(service.POST("/login").To(AuthenticateUser))
-	service.Route(service.GET("/activate/{" + TOKEN + "}").To(ActivateUser))
+	service.Route(service.POST("/activate/{" + TOKEN + "}").To(ActivateUser))
 	service.Route(service.POST("/forgot").To(ForgotPassword))
 	service.Route(service.POST("/reset/{" + TOKEN + "}").To(ResetPassword))
 }

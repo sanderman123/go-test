@@ -1,4 +1,4 @@
-package router
+package gorestful
 
 import (
 	"github.com/emicklei/go-restful"
