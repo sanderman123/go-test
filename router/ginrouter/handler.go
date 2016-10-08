@@ -5,14 +5,28 @@ import (
 	"net/http"
 	"github.com/gin-gonic/gin"
 	"github.com/sanderman123/user-service/model"
+	"github.com/sanderman123/user-service/util"
+	"github.com/dgrijalva/jwt-go"
 )
 
 type pathParameterController func(parameter string) controller.Response
 type pathParameterStringController func(parameter string, string string) controller.Response
 type entityController func(entity interface{}) controller.Response
 type entityRequestController func(entity interface{}, request *http.Request) controller.Response
+type entityResponseWriterController func(entity interface{}, request http.ResponseWriter) controller.Response
+
+type authenticatedPathParameterController func(claims jwt.MapClaims, parameter string) controller.Response
 
 //Generic Handlers
+func AuthenticatedPathParameterHandler(c *gin.Context, fn authenticatedPathParameterController, parameterName string) {
+	claims, err := util.IsAuthenticated(c.Request)
+	if err == nil {
+		respond(c, fn(claims, c.Param(parameterName)))
+	} else {
+		respond(c, controller.Response{Status: http.StatusUnauthorized})
+	}
+}
+
 func PathParameterHander(c *gin.Context, fn pathParameterController, parameterName string) {
 	result := fn(c.Param(parameterName))
 	respond(c, result)
@@ -48,6 +62,17 @@ func EntityRequestHander(c *gin.Context, fn entityRequestController, factory int
 	} else {
 		result := fn(entity, c.Request)
 		respond(c, result)
+	}
+}
+
+func EntityResponseWriterHandler(c *gin.Context, fn entityResponseWriterController, factory interface{}) {
+	b := factory.(model.Factory)
+	entity := b.NewEntity()
+	err := c.Bind(&entity)
+	if err == nil {
+		respond(c, fn(entity, c.Writer.(http.ResponseWriter)))
+	} else {
+		respond(c, controller.Response{Status: http.StatusInternalServerError})
 	}
 }
 

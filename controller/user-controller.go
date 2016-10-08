@@ -11,21 +11,25 @@ import (
 	"log"
 	"github.com/sanderman123/user-service/util"
 	"github.com/sanderman123/user-service/dao"
+	"golang.org/x/net/xsrftoken"
 )
 
-func FindUser(userName string) Response {
+func FindUser(claims jwt.MapClaims, userName string) Response {
 	result := Response{}
+	if claims[util.SUB] == userName {
+		usr, err := dao.FindUserWithUserName(userName)
+		usr.Password = ""
 
-	usr, err := dao.FindUserWithUserName(userName)
-	usr.Password = ""
-
-	if err == nil {
-		result = Response{Status: http.StatusOK, Body: usr}
-	} else if err == mgo.ErrNotFound {
-		result = Response{Status: http.StatusNotFound}
+		if err == nil {
+			result = Response{Status: http.StatusOK, Body: usr}
+		} else if err == mgo.ErrNotFound {
+			result = Response{Status: http.StatusNotFound}
+		} else {
+			log.Print("Error for user with userName ", userName, ": ", err)
+			result = Response{Status: http.StatusInternalServerError, Body: err}
+		}
 	} else {
-		log.Print("Error for user with userName ", userName, ": ", err)
-		result = Response{Status: http.StatusInternalServerError, Body: err}
+		result = Response{Status: http.StatusUnauthorized, Body: "You can only retrieve your own information"}
 	}
 	return result
 }
@@ -74,7 +78,7 @@ func DeleteUser(userName string) Response {
 	return ProduceResponse(nil, err)
 }
 
-func AuthenticateUser(entity interface{}) Response {
+func AuthenticateUser(entity interface{}, w http.ResponseWriter) Response {
 	usr := entity.(model.User)
 	unHashedPassword := usr.Password
 	usr, err := dao.FindUserWithUserName(usr.UserName)
@@ -90,18 +94,41 @@ func AuthenticateUser(entity interface{}) Response {
 	}
 
 	usr.Password = ""
+	xsrfToken := xsrftoken.Generate("my-xsrf-secret", usr.UserName, "ANY")
 
-	// Create a new token object, specifying signing method and the claims
-	// you would like it to contain.
+	// Create a new token object with claims
+	now := time.Now()
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
-		"userName": usr.UserName,
-		"nbf": time.Date(2016, 9, 24, 12, 0, 0, 0, time.UTC).Unix(),
+		"sub": usr.UserName,
+		"iat": now,
+		"exp": now.Add(time.Hour * 24),
+		"xsrfToken": xsrfToken,
 	})
 
 	// Sign and get the complete encoded token as a string using the secret
 	tokenString, err := token.SignedString([]byte("my-secret"))
 
 	fmt.Println(tokenString, err)
+
+	http.SetCookie(w, &http.Cookie{
+		Name: "jwt",
+		Value: tokenString,
+		Expires: now.Add(time.Hour * 24 * 7),
+		Path: "/",
+		Secure: true,
+		HttpOnly: true,
+	})
+	jwtCookie := w.Header().Get("Set-Cookie")
+	jwtCookie += "; SameSite=strict"
+	w.Header().Set("Set-Cookie", jwtCookie)
+
+	http.SetCookie(w, &http.Cookie{
+		Name: "xsrfToken",
+		Value: xsrfToken,
+		Expires: now.Add(time.Hour * 24 * 7),
+		Path: "/",
+		Secure: true,
+	})
 
 	return ProduceResponse(tokenString, err)
 }

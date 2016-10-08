@@ -26,7 +26,7 @@ func Init(service *restful.WebService) {
 }
 
 func FindUser(request *restful.Request, rp *restful.Response) {
-	PathParameterHander(request, rp, controller.FindUser, USER_NAME)
+	AuthenticatedPathParameterHandler(request, rp, controller.FindUser, USER_NAME)
 }
 
 func CreateUser(request *restful.Request, response *restful.Response) {
@@ -42,7 +42,7 @@ func DeleteUser(request *restful.Request, response *restful.Response) {
 }
 
 func AuthenticateUser(request *restful.Request, response *restful.Response) {
-	EntityHander(request, response, controller.AuthenticateUser, model.UserFactory{})
+	EntityResponseWriterHandler(request, response, controller.AuthenticateUser, model.UserFactory{})
 }
 
 func ActivateUser(request *restful.Request, response *restful.Response) {

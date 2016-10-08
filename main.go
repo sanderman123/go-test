@@ -21,6 +21,9 @@ var (
 	propertiesFile = flag.String("config", "user-service.properties", "the configuration file")
 )
 
+var serverKey = ""
+var serverCertificate = ""
+
 func main() {
 	message := "Hello World!"
 	fmt.Println(message)
@@ -43,6 +46,9 @@ func main() {
 
 	controller.Init(props.GetString("mail.host", ""), props.GetInt("mail.port", 0), props.GetString("mail.username", ""), props.GetString("mail.password", ""))
 
+	serverKey = props.GetString("https.serverKey", "")
+	serverCertificate = props.GetString("https.serverCertificate", "")
+
 	//GoRestful()
 	Gin()
 }
@@ -51,13 +57,15 @@ func GoRestful() {
 	service := new(restful.WebService)
 	gorestful.Init(service)
 	restful.Add(service)
-	log.Fatal(http.ListenAndServe(":8080", nil))
+	//log.Fatal(http.ListenAndServe(":8080", nil))
+	log.Fatal(http.ListenAndServeTLS(":8080", serverCertificate, serverKey, nil))
 }
 
 func Gin() {
 	r := gin.Default()
 	ginrouter.Init(r)
-	r.Run(":8080")
+	//r.Run(":8080")
+	r.RunTLS(":8080", serverCertificate, serverKey)
 }
 
 func Log(l *log.Logger, msg string) {

@@ -14,10 +14,8 @@ func Init(r *gin.Engine) {
 
 	users := r.Group("/users")
 	{
-		users.GET("/:name", func(c *gin.Context) {
-			name := c.Param("name")
-			response := controller.FindUser(name)
-			c.JSON(response.Status, response.Body)
+		users.GET("/:" + USER_NAME, func(c *gin.Context) {
+			AuthenticatedPathParameterHandler(c, controller.FindUser, USER_NAME)
 		})
 		users.POST("", func(c *gin.Context) {
 			EntityRequestHander(c, controller.CreateUser, model.UserFactory{})
@@ -25,19 +23,19 @@ func Init(r *gin.Engine) {
 		users.PUT("", func(c *gin.Context) {
 			EntityHandler(c, controller.UpdateUser, userFactory)
 		})
-		users.DELETE("/:user-name", func(c *gin.Context) {
+		users.DELETE("/:" + USER_NAME, func(c *gin.Context) {
 			PathParameterHander(c, controller.DeleteUser, USER_NAME)
 		})
 		users.POST("/login", func(c *gin.Context) {
-			EntityHandler(c, controller.AuthenticateUser, userFactory)
+			EntityResponseWriterHandler(c, controller.AuthenticateUser, userFactory)
 		})
-		users.POST("/activate/:token", func(c *gin.Context) {
+		users.POST("/activate/:" + TOKEN, func(c *gin.Context) {
 			PathParameterHander(c, controller.ActivateUser, TOKEN)
 		})
 		users.POST("/forgot", func(c *gin.Context) {
 			EntityRequestHander(c, controller.ForgotPassword, userFactory)
 		})
-		users.POST("/reset/:token", func(c *gin.Context) {
+		users.POST("/reset/:" + TOKEN, func(c *gin.Context) {
 			PathParameterStringHander(c, controller.ResetPassword, TOKEN)
 		})
 	}
