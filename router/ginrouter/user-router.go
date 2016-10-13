@@ -18,25 +18,25 @@ func Init(r *gin.Engine) {
 			AuthenticatedPathParameterHandler(c, controller.FindUser, USER_NAME)
 		})
 		users.POST("", func(c *gin.Context) {
-			EntityRequestHander(c, controller.CreateUser, model.UserFactory{})
+			EntityRequestHandler(c, controller.CreateUser, model.UserFactory{})
 		})
 		users.PUT("", func(c *gin.Context) {
-			EntityHandler(c, controller.UpdateUser, userFactory)
+			AuthenticatedEntityHandler(c, controller.UpdateUser, userFactory)
 		})
 		users.DELETE("/:" + USER_NAME, func(c *gin.Context) {
-			PathParameterHander(c, controller.DeleteUser, USER_NAME)
+			AuthenticatedPathParameterHandler(c, controller.DeleteUser, USER_NAME)
 		})
 		users.POST("/login", func(c *gin.Context) {
 			EntityResponseWriterHandler(c, controller.AuthenticateUser, userFactory)
 		})
 		users.POST("/activate/:" + TOKEN, func(c *gin.Context) {
-			PathParameterHander(c, controller.ActivateUser, TOKEN)
+			PathParameterHandler(c, controller.ActivateUser, TOKEN)
 		})
 		users.POST("/forgot", func(c *gin.Context) {
-			EntityRequestHander(c, controller.ForgotPassword, userFactory)
+			EntityRequestHandler(c, controller.ForgotPassword, userFactory)
 		})
 		users.POST("/reset/:" + TOKEN, func(c *gin.Context) {
-			PathParameterStringHander(c, controller.ResetPassword, TOKEN)
+			PathParameterStringHandler(c, controller.ResetPassword, TOKEN)
 		})
 	}
 }

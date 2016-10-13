@@ -16,10 +16,10 @@ type entityRequestController func(entity interface{}, request *http.Request) con
 type entityResponseWriterController func(entity interface{}, request http.ResponseWriter) controller.Response
 
 type authenticatedPathParameterController func(claims jwt.MapClaims, parameter string) controller.Response
-
+type authenticatedEntityController func(claims jwt.MapClaims, entity interface{}) controller.Response
 
 //Generic Handlers
-func PathParameterHander(request *restful.Request, response *restful.Response, fn pathParameterController, parameterName string) {
+func PathParameterHandler(request *restful.Request, response *restful.Response, fn pathParameterController, parameterName string) {
 	result := fn(request.PathParameter(parameterName))
 	response.WriteHeaderAndEntity(result.Status, result.Body)
 }
@@ -34,7 +34,7 @@ func AuthenticatedPathParameterHandler(request *restful.Request, response *restf
 	}
 }
 
-func PathParameterStringHander(request *restful.Request, response *restful.Response, fn pathParameterStringController, parameterName string) {
+func PathParameterStringHandler(request *restful.Request, response *restful.Response, fn pathParameterStringController, parameterName string) {
 	str := ""
 	err := request.ReadEntity(&str)
 	if err != nil {
@@ -45,7 +45,7 @@ func PathParameterStringHander(request *restful.Request, response *restful.Respo
 	}
 }
 
-func EntityHander(request *restful.Request, response *restful.Response, fn entityController, factory interface{}) {
+func EntityHandler(request *restful.Request, response *restful.Response, fn entityController, factory interface{}) {
 	b := factory.(model.Factory)
 	entity := b.NewEntity()
 	err := request.ReadEntity(&entity)
@@ -57,7 +57,24 @@ func EntityHander(request *restful.Request, response *restful.Response, fn entit
 	}
 }
 
-func EntityRequestHander(request *restful.Request, response *restful.Response, fn entityRequestController, factory interface{}) {
+func AuthenticatedEntityHandler(request *restful.Request, response *restful.Response, fn authenticatedEntityController, factory interface{}) {
+	claims, err := util.IsAuthenticated(request.Request)
+	if err == nil {
+		b := factory.(model.Factory)
+		entity := b.NewEntity()
+		err := request.ReadEntity(&entity)
+		if err != nil {
+			response.WriteError(http.StatusInternalServerError, err)
+		} else {
+			result := fn(claims, entity)
+			response.WriteHeaderAndEntity(result.Status, result.Body);
+		}
+	} else {
+		response.WriteHeader(http.StatusUnauthorized)
+	}
+}
+
+func EntityRequestHandler(request *restful.Request, response *restful.Response, fn entityRequestController, factory interface{}) {
 	b := factory.(model.Factory)
 	entity := b.NewEntity()
 	err := request.ReadEntity(&entity)

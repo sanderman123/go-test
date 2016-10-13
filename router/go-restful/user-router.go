@@ -30,15 +30,15 @@ func FindUser(request *restful.Request, rp *restful.Response) {
 }
 
 func CreateUser(request *restful.Request, response *restful.Response) {
-	EntityRequestHander(request, response, controller.CreateUser, model.UserFactory{})
+	EntityRequestHandler(request, response, controller.CreateUser, model.UserFactory{})
 }
 
 func UpdateUser(request *restful.Request, response *restful.Response) {
-	EntityHander(request, response, controller.UpdateUser, model.UserFactory{})
+	AuthenticatedEntityHandler(request, response, controller.UpdateUser, model.UserFactory{})
 }
 
 func DeleteUser(request *restful.Request, response *restful.Response) {
-	PathParameterHander(request, response, controller.DeleteUser, USER_NAME)
+	AuthenticatedPathParameterHandler(request, response, controller.DeleteUser, USER_NAME)
 }
 
 func AuthenticateUser(request *restful.Request, response *restful.Response) {
@@ -46,13 +46,13 @@ func AuthenticateUser(request *restful.Request, response *restful.Response) {
 }
 
 func ActivateUser(request *restful.Request, response *restful.Response) {
-	PathParameterHander(request, response, controller.ActivateUser, TOKEN)
+	PathParameterHandler(request, response, controller.ActivateUser, TOKEN)
 }
 
 func ForgotPassword(request *restful.Request, response *restful.Response) {
-	EntityRequestHander(request, response, controller.ForgotPassword, model.UserFactory{})
+	EntityRequestHandler(request, response, controller.ForgotPassword, model.UserFactory{})
 }
 
 func ResetPassword(request *restful.Request, response *restful.Response) {
-	PathParameterStringHander(request, response, controller.ResetPassword, TOKEN)
+	PathParameterStringHandler(request, response, controller.ResetPassword, TOKEN)
 }

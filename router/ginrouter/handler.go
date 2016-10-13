@@ -16,8 +16,14 @@ type entityRequestController func(entity interface{}, request *http.Request) con
 type entityResponseWriterController func(entity interface{}, request http.ResponseWriter) controller.Response
 
 type authenticatedPathParameterController func(claims jwt.MapClaims, parameter string) controller.Response
+type authenticatedEntityController func(claims jwt.MapClaims, entity interface{}) controller.Response
 
 //Generic Handlers
+func PathParameterHandler(c *gin.Context, fn pathParameterController, parameterName string) {
+	result := fn(c.Param(parameterName))
+	respond(c, result)
+}
+
 func AuthenticatedPathParameterHandler(c *gin.Context, fn authenticatedPathParameterController, parameterName string) {
 	claims, err := util.IsAuthenticated(c.Request)
 	if err == nil {
@@ -27,12 +33,7 @@ func AuthenticatedPathParameterHandler(c *gin.Context, fn authenticatedPathParam
 	}
 }
 
-func PathParameterHander(c *gin.Context, fn pathParameterController, parameterName string) {
-	result := fn(c.Param(parameterName))
-	respond(c, result)
-}
-
-func PathParameterStringHander(c *gin.Context, fn pathParameterStringController, parameterName string) {
+func PathParameterStringHandler(c *gin.Context, fn pathParameterStringController, parameterName string) {
 	str := ""
 	err := c.Bind(&str)
 	if err != nil {
@@ -53,7 +54,23 @@ func EntityHandler(c *gin.Context, fn entityController, factory interface{}) {
 	}
 }
 
-func EntityRequestHander(c *gin.Context, fn entityRequestController, factory interface{}) {
+func AuthenticatedEntityHandler(c *gin.Context, fn authenticatedEntityController, factory interface{}) {
+	claims, err := util.IsAuthenticated(c.Request)
+	if err == nil {
+		b := factory.(model.Factory)
+		entity := b.NewEntity()
+		err := c.Bind(&entity)
+		if err == nil {
+			respond(c, fn(claims, entity))
+		} else {
+			respond(c, controller.Response{Status: http.StatusInternalServerError})
+		}
+	} else {
+		respond(c, controller.Response{Status: http.StatusUnauthorized})
+	}
+}
+
+func EntityRequestHandler(c *gin.Context, fn entityRequestController, factory interface{}) {
 	b := factory.(model.Factory)
 	entity := b.NewEntity()
 	err := c.Bind(&entity)

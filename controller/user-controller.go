@@ -3,7 +3,6 @@ package controller
 import (
 	"github.com/sanderman123/user-service/model"
 	"net/http"
-	"gopkg.in/mgo.v2"
 	"time"
 	"golang.org/x/crypto/bcrypt"
 	"github.com/dgrijalva/jwt-go"
@@ -19,17 +18,9 @@ func FindUser(claims jwt.MapClaims, userName string) Response {
 	if claims[util.SUB] == userName {
 		usr, err := dao.FindUserWithUserName(userName)
 		usr.Password = ""
-
-		if err == nil {
-			result = Response{Status: http.StatusOK, Body: usr}
-		} else if err == mgo.ErrNotFound {
-			result = Response{Status: http.StatusNotFound}
-		} else {
-			log.Print("Error for user with userName ", userName, ": ", err)
-			result = Response{Status: http.StatusInternalServerError, Body: err}
-		}
+		result = ProduceResponse(usr, err)
 	} else {
-		result = Response{Status: http.StatusUnauthorized, Body: "You can only retrieve your own information"}
+		result = ProduceStatusResponse("You can only retrieve your own information", nil, http.StatusUnauthorized)
 	}
 	return result
 }
@@ -56,26 +47,29 @@ func CreateUser(entity interface{}, request *http.Request) Response {
 	return result
 }
 
-func UpdateUser(entity interface{}) Response {
+func UpdateUser(claims jwt.MapClaims, entity interface{}) Response {
 	result := Response{}
 	usr := entity.(model.User)
-	err := util.SetPassword(&usr, usr.Password)
-	err = dao.UpdateUser(usr)
-	usr.Password = ""
-
-	if err == nil {
-		result = Response{Status: http.StatusOK, Body: usr}
-	} else if err == mgo.ErrNotFound {
-		result = Response{Status: http.StatusNotFound}
+	if claims[util.SUB] == usr.UserName {
+		err := util.SetPassword(&usr, usr.Password)
+		err = dao.UpdateUser(usr)
+		usr.Password = ""
+		result = ProduceResponse(usr, err)
 	} else {
-		result = Response{Status: http.StatusInternalServerError, Body: err}
+		result = ProduceStatusResponse("You can only update your own information", nil, http.StatusUnauthorized)
 	}
 	return result
 }
 
-func DeleteUser(userName string) Response {
-	err := dao.RemoveUser(userName)
-	return ProduceResponse(nil, err)
+func DeleteUser(claims jwt.MapClaims, userName string) Response {
+	var result Response
+	if claims[util.SUB] == userName {
+		err := dao.RemoveUser(userName)
+		result = ProduceResponse(nil, err)
+	} else {
+		result = ProduceStatusResponse("You can only delete your own information", nil, http.StatusUnauthorized)
+	}
+	return result
 }
 
 func AuthenticateUser(entity interface{}, w http.ResponseWriter) Response {
